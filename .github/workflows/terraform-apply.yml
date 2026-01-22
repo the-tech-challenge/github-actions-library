@@ -17,6 +17,11 @@ on:
         required: false
         type: boolean
         default: true
+      environment:
+        description: 'GitHub Environment for deployment protection'
+        required: false
+        type: string
+        default: ''
     secrets:
       ROLE_TO_ASSUME:
         required: true
@@ -26,6 +31,7 @@ on:
 jobs:
   apply:
     runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || null }}
     timeout-minutes: 60
     permissions:
       id-token: write
