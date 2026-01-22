@@ -43,7 +43,7 @@ jobs:
       id-token: write
       contents: read
     outputs:
-      image_uri: ${{ steps.build-push.outputs.image_uri }}
+      image_uri: ${{ steps.output-uri.outputs.image_uri }}
     
     steps:
       - name: Checkout
@@ -77,4 +77,5 @@ jobs:
           provenance: false
           
       - name: Output Image URI
+        id: output-uri
         run: echo "image_uri=${{ steps.login-ecr.outputs.registry }}/${{ inputs.ecr_repository }}:${{ inputs.image_tag }}" >> $GITHUB_OUTPUT
