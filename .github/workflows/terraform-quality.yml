@@ -12,11 +12,6 @@ on:
         required: false
         type: string
         default: '1.6.0'
-    secrets:
-      ROLE_TO_ASSUME:
-        required: true
-      AWS_REGION:
-        required: false
 
 jobs:
   quality:
@@ -24,7 +19,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
-      id-token: write
       contents: read
     defaults:
       run:
@@ -52,12 +46,6 @@ jobs:
 
       - name: Run TFLint
         run: tflint -f compact
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.ROLE_TO_ASSUME }}
-          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
 
       - name: Terraform Init
         run: terraform init -backend=false
