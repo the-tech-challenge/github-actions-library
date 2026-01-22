@@ -1,0 +1,99 @@
+name: Deploy to EC2
+
+on:
+  workflow_call:
+    inputs:
+      image_uri:
+        description: 'Docker image URI to deploy'
+        required: true
+        type: string
+      instance_id:
+        description: 'EC2 instance ID'
+        required: true
+        type: string
+      container_name:
+        description: 'Container name'
+        required: false
+        type: string
+        default: 'app'
+      container_port:
+        description: 'Container port'
+        required: false
+        type: number
+        default: 5000
+      aws_region:
+        description: 'AWS region'
+        required: false
+        type: string
+        default: 'us-east-1'
+    secrets:
+      ROLE_TO_ASSUME:
+        required: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      id-token: write
+      contents: read
+    
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.ROLE_TO_ASSUME }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Deploy via SSM
+        env:
+          IMAGE_URI: ${{ inputs.image_uri }}
+          CONTAINER_NAME: ${{ inputs.container_name }}
+          CONTAINER_PORT: ${{ inputs.container_port }}
+          AWS_REGION: ${{ inputs.aws_region }}
+        run: |
+          # Extract ECR registry from image URI
+          ECR_REGISTRY=$(echo $IMAGE_URI | cut -d/ -f1)
+          
+          # Send command and capture Command ID
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "${{ inputs.instance_id }}" \
+            --document-name "AWS-RunShellScript" \
+            --parameters commands='[
+              "aws ecr get-login-password --region '"$AWS_REGION"' | docker login --username AWS --password-stdin '"$ECR_REGISTRY"'",
+              "docker pull '"$IMAGE_URI"'",
+              "docker stop '"$CONTAINER_NAME"' || true",
+              "docker rm '"$CONTAINER_NAME"' || true",
+              "docker run -d --name '"$CONTAINER_NAME"' --restart unless-stopped -p '"$CONTAINER_PORT"':'"$CONTAINER_PORT"' '"$IMAGE_URI"'"
+            ]' \
+            --comment "Deploy $CONTAINER_NAME" \
+            --query "Command.CommandId" \
+            --output text)
+          
+          echo "🚀 Deployment command sent. Command ID: $COMMAND_ID"
+          echo "⏳ Waiting for command execution to complete..."
+
+          # Wait for command to complete
+          aws ssm wait command-executed \
+            --command-id "$COMMAND_ID" \
+            --instance-id "${{ inputs.instance_id }}"
+
+          # Get command status
+          STATUS=$(aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" \
+            --instance-id "${{ inputs.instance_id }}" \
+            --query "Status" \
+            --output text)
+
+          if [ "$STATUS" == "Success" ]; then
+            echo "✅ Deployment successful!"
+          else
+            echo "❌ Deployment failed with status: $STATUS"
+            # Print stderr for debugging
+            aws ssm get-command-invocation \
+              --command-id "$COMMAND_ID" \
+              --instance-id "${{ inputs.instance_id }}" \
+              --query "StandardErrorContent" \
+              --output text
+            exit 1
+          fi
